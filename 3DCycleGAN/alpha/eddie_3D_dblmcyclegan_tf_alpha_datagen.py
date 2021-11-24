@@ -537,9 +537,9 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=1,batch_size=5,imgshape=(256,256,1)
 D_losses,G_losses=cGAN.traincgan()
 # data=cGAN.data_generator()
 
-# from scipy.io import savemat
-# mdic = {"D_losses":D_losses,"G_losses":G_losses}
-# savemat("Losses.mat",mdic)
+from scipy.io import savemat
+mdic = {"D_losses":D_losses,"G_losses":G_losses}
+savemat("Losses.mat",mdic)
 
 # train_ds=cGAN.get_ds()
 

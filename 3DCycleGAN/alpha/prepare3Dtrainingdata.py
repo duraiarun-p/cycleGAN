@@ -71,6 +71,7 @@ def datasave(onlyfiles,CBtrainpath,CTtrainpath):
         PlanCTCellRef=mat_contents[PlanCTCellRef]
         CT=PlanCTCellRef[()]
         CT=np.transpose(CT,(2,1,0))#data volume
+        CT = (CT-np.min(CT))/(np.max(CT)-np.min(CT))
         CTsiz1=CT.shape
         # CTblocksN=(CTsiz1[0]*CTsiz1[1]*CTsiz1[2])//(patch_size*patch_size*4*depth_size)
         CTblocks=blkextraction(CT,CTsiz1,patch_size,depth_size)
@@ -92,7 +93,7 @@ def datasave(onlyfiles,CBtrainpath,CTtrainpath):
             CBCellRef=mat_contents[CBCellRef]
             CBCT=CBCellRef[()]
             CBCT=np.transpose(CBCT,(2,1,0))
-            
+            CBCT = (CBCT-np.min(CBCT))/(np.max(CBCT)-np.min(CBCT))
             CBsiz=CBCT.shape
             # CBblocksN=(CBsiz[0]*CBsiz[1]*CBsiz[2])//(patch_size*patch_size*4*depth_size)
             CBblocks=blkextraction(CBCT,CBsiz,patch_size,depth_size)
@@ -110,8 +111,8 @@ mypath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/'
 depth_size=32
 patch_size=16
 
-CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/trainCB'
-CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/trainCT'
+CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/trainCB'
+CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/trainCT'
 
 
 onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
@@ -120,16 +121,16 @@ onlyfileslenrem=len(onlyfiles)-round(len(onlyfiles)*0.7)
 onlyfiles = onlyfiles[:-onlyfileslenrem]
 datasave(onlyfiles,CBtrainpath,CTtrainpath)
 print('Training Data saved')
-CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/validCB'
-CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/validCT'
+CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/validCB'
+CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/validCT'
 onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
 onlyfiles.sort()
 onlyfileslenrem=len(onlyfiles)-round(len(onlyfiles)*0.7)
 onlyfiles = onlyfiles[-onlyfileslenrem]
 datasave(onlyfiles,CBtrainpath,CTtrainpath)
 print('Validation data saved')
-CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/testCB'
-CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db3/testCT'
+CBtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/testCB'
+CTtrainpath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/testCT'
 onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
 onlyfiles.sort()
 onlyfileslenrem=len(onlyfiles)-round(len(onlyfiles)*0.7)
