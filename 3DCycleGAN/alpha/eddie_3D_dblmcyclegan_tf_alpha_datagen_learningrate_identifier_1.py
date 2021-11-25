@@ -482,6 +482,14 @@ class CycleGAN():
         D_losses = []
         G_losses = []
         
+        # D_loss_dict = []
+        # D_loss_dict.append([])
+        # D_loss_dict.append([])
+        # G_loss_dict = []
+        # G_loss_dict.append([])
+        # G_loss_dict.append([])
+        D_loss_dict = np.zeros((self.epochs,self.epochs))
+        G_loss_dict = np.zeros((self.epochs,self.epochs))
         #Learning rate schedule
         learning_rates=self.learningrate_log_scheduler()
         
@@ -522,10 +530,11 @@ class CycleGAN():
               
         for epochi in range(self.epochs):
             # if self.use_data_generator:
-                loop_index = 1
+            loop_index = 1
                 
-                K.set_value(self.Gen_optimizer.learning_rate, learning_rates[epochi])
-                K.set_value(self.Disc_optimizer.learning_rate, learning_rates[epochi])
+            K.set_value(self.Gen_optimizer.learning_rate, learning_rates[epochi])
+            for epochi2 in range(self.epochs):
+                K.set_value(self.Disc_optimizer.learning_rate, learning_rates[epochi2])
                 
                 for images in self.data_generator:
                     batch_CT = images[0]
@@ -543,19 +552,23 @@ class CycleGAN():
                 
                 D_losses.append(d_loss)
                 G_losses.append(g_loss)
+                D_loss_dict[epochi,epochi2]=d_loss[0]
+                G_loss_dict[epochi,epochi2]=g_loss[0]
+                # D_loss_dict.append(D_losses)
+                # G_loss_dict.append(G_losses)
                     
-                if epochi % 1 == 0 and self.saveweightflag==True: # Weights saved based on epoch intervals
-                    gen1fname1=gen1fname+'-'+str(epochi)+'.h5'    
-                    gen2fname1=gen2fname+'-'+str(epochi)+'.h5'
-                    disc1fname1=disc1fname+'-'+str(epochi)+'.h5'
-                    disc2fname1=disc2fname+'-'+str(epochi)+'.h5'
-                    self.GenCT2CB.save_weights(gen1fname1)
-                    self.GenCB2CT.save_weights(gen2fname1)
-                    self.DiscCT.save_weights(disc1fname1)
-                    self.DiscCB.save_weights(disc2fname1)
+            if epochi % 1 == 0 and self.saveweightflag==True: # Weights saved based on epoch intervals
+                gen1fname1=gen1fname+'-'+str(epochi)+'.h5'    
+                gen2fname1=gen2fname+'-'+str(epochi)+'.h5'
+                disc1fname1=disc1fname+'-'+str(epochi)+'.h5'
+                disc2fname1=disc2fname+'-'+str(epochi)+'.h5'
+                self.GenCT2CB.save_weights(gen1fname1)
+                self.GenCB2CT.save_weights(gen2fname1)
+                self.DiscCT.save_weights(disc1fname1)
+                self.DiscCB.save_weights(disc2fname1)
         os.system("nvidia-smi")
         print('Epoch')
-        return D_losses,G_losses
+        return D_losses,G_losses,D_loss_dict,G_loss_dict
         
 #%%
 
@@ -585,7 +598,7 @@ weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/0
 
 # batch_size=1
 # epochs=1
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=10,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=20,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
 # def run_tf(cGAN):
 #     D_losses,G_losses=cGAN.traincgan()
     
@@ -596,12 +609,12 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=10,batch_size=5,imgshape=(256,256,1
 # D_losses,G_losses=cGAN.traincgan()
 # data=cGAN.data_generator()
 
-# D_losses,G_losses=cGAN.traincgan()
+D_losses,G_losses,D_loss_dict,G_loss_dict=cGAN.traincgan()
 lr=cGAN.learningrate_log_scheduler()
-
-# from scipy.io import savemat
-# mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
-# savemat("Losses.mat",mdic)
+#%%
+from scipy.io import savemat
+mdic = {"D_losses":D_loss_dict,"G_losses":G_loss_dict,"lr":lr}
+savemat("Losses.mat",mdic)
 
 # train_ds=cGAN.get_ds()
 

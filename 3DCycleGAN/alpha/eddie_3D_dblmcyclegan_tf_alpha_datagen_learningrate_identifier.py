@@ -585,7 +585,7 @@ weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/0
 
 # batch_size=1
 # epochs=1
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=10,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=100,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
 # def run_tf(cGAN):
 #     D_losses,G_losses=cGAN.traincgan()
     
@@ -596,12 +596,12 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=10,batch_size=5,imgshape=(256,256,1
 # D_losses,G_losses=cGAN.traincgan()
 # data=cGAN.data_generator()
 
-# D_losses,G_losses=cGAN.traincgan()
+D_losses,G_losses=cGAN.traincgan()
 lr=cGAN.learningrate_log_scheduler()
-
-# from scipy.io import savemat
-# mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
-# savemat("Losses.mat",mdic)
+#%%
+from scipy.io import savemat
+mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
+savemat("Losses.mat",mdic)
 
 # train_ds=cGAN.get_ds()
 
