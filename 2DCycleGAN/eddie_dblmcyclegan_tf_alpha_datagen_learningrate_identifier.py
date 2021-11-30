@@ -25,6 +25,7 @@ import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
+from tensorflow.keras.models import clone_model
 
 import PIL
 from PIL import Image
@@ -143,8 +144,8 @@ class CycleGAN():
         d4 = self.conv2d(d3, self.discfilter*8, stride=2, normalization=True)
         d5 = self.conv2d(d4, self.discfilter*8, stride=1, normalization=True)
         d6 = layers.Conv2D(1, kernel_size=4, strides=1, padding='same')(d5)
-        d6 = layers.Flatten()(d6)
-        d6 = layers.Dense(1)(d6)
+        # d6 = layers.Flatten()(d6)#PatchDisc ?
+        # d6 = layers.Dense(1)(d6)
         d7 = layers.Activation('relu')(d6)
         
         return keras.Model(d0,d7)
@@ -230,6 +231,9 @@ class CycleGAN():
           self.DiscCB=self.build_discriminator()
           self.DiscCB.compile(loss='mse', optimizer=self.Disc_optimizer, metrics=['accuracy'])
           self.DiscCB._name='Discriminator-CB'
+          
+          self.DiscCT_static=self.DiscCT
+          self.DiscCB_static=self.DiscCB
          
           layer_len=len(self.DiscCT.layers)
           layers_lis=self.DiscCT.layers
@@ -252,6 +256,12 @@ class CycleGAN():
           # Input images from both domains
           img_CT = keras.Input(shape=self.img_shape)
           img_CB = keras.Input(shape=self.img_shape)
+          
+          valid_CT = self.DiscCT(img_CT)
+          valid_CB = self.DiscCB(img_CB)
+          
+          self.DiscCT_static.set_weights(self.DiscCT.get_weights())
+          self.DiscCB_static.set_weights(self.DiscCB.get_weights())
         
         # Translate images to the other domain
           fake_CB = self.GenCT2CB(img_CT)
@@ -264,12 +274,12 @@ class CycleGAN():
           img_CB_id = self.GenCB2CT(img_CB)
         
         # For the combined model we will only train the generators
-          self.DiscCT.trainable = False
-          self.DiscCB.trainable = False
+          # self.DiscCT.trainable = True
+          # self.DiscCB.trainable = True
         
         # Discriminators determines validity of translated images
-          valid_CT = self.DiscCT(fake_CT)
-          valid_CB = self.DiscCB(fake_CB)
+          valid_CT = self.DiscCT_static(fake_CT)
+          valid_CB = self.DiscCB_static(fake_CB)
         
         # Combined model trains generators to fool discriminators
           self.cycleGAN_Model = keras.Model(inputs=[img_CT, img_CB], outputs=[valid_CT, valid_CB, reconstr_CT, reconstr_CB, img_CT_id, img_CB_id])
@@ -432,12 +442,12 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=100,batch_size=3,imgshape=(256,256,
 # p.join()
 # Losses=p.value
 
-# D_losses,G_losses=cGAN.traincgan()
-# lr=cGAN.learningrate_log_scheduler()
-
-# from scipy.io import savemat
-# mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
-# savemat("Losses.mat",mdic)
+D_losses,G_losses=cGAN.traincgan()
+lr=cGAN.learningrate_log_scheduler()
+#%%
+from scipy.io import savemat
+mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
+savemat("Losses.mat",mdic)
 
 #%%
 print('Script started at')

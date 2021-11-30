@@ -26,6 +26,8 @@ import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
+# import tensorflow.python.keras.engine
+from tensorflow.keras.models import clone_model
 
 import scipy.io
 from tensorflow.keras.utils import Sequence
@@ -397,6 +399,9 @@ class CycleGAN():
           self.DiscCB.compile(loss='mse', optimizer=self.Disc_optimizer, metrics=['accuracy'])
           self.DiscCB._name='Discriminator-CB'
          
+          self.DiscCT_static=self.DiscCT
+          self.DiscCB_static=self.DiscCB
+          
           layer_len=len(self.DiscCT.layers)
           layers_lis=self.DiscCT.layers
           labelshapearr=list(layers_lis[layer_len-1].output_shape)
@@ -407,6 +412,8 @@ class CycleGAN():
           self.GenCB2CT=self.build_generator3D()
           self.GenCB2CT.compile(loss='mse', optimizer=self.Gen_optimizer, metrics=['accuracy'])
           self.GenCB2CT._name='Generator-CB2CT'
+         
+          
           # self.GenCB2CT.summary()
           with open('Gena.txt', 'w+') as f:
               self.GenCB2CT.summary(print_fn=lambda x: f.write(x + '\n'))
@@ -414,10 +421,28 @@ class CycleGAN():
           self.GenCT2CB=self.build_generator3D()
           self.GenCT2CB.compile(loss='mse', optimizer=self.Gen_optimizer, metrics=['accuracy'])
           self.GenCT2CB._name='Generator-CT2CB'
-         
-          # Input images from both domains
+          
           img_CT = keras.Input(shape=self.input_layer_shape_3D)
           img_CB = keras.Input(shape=self.input_layer_shape_3D)
+          
+          valid_CT = self.DiscCT(img_CT)
+          valid_CB = self.DiscCB(img_CB)
+          
+          # self.DiscCT_static = Network(inputs=img_CT, outputs=guess_A, name='D_A_static_model')
+          # self.DiscCB_static = Network(inputs=img_CB, outputs=guess_B, name='D_B_static_model')
+          # self.DiscCT_static = clone_model(self.DiscCT)
+          # self.DiscCB_static = clone_model(self.DiscCB)
+          self.DiscCT_static.set_weights(self.DiscCT.get_weights())
+          self.DiscCB_static.set_weights(self.DiscCB.get_weights())
+          # self.DiscCT_static = clone_model(self.DiscCT)
+          # self.DiscCB_static = clone_model(self.DiscCB)
+        
+        # For the combined model we will only train the generators
+          # self.DiscCT_static.trainable = False
+          # self.DiscCB_static.trainable = False
+         
+          # Input images from both domains
+
         
         # Translate images to the other domain
           fake_CB = self.GenCT2CB(img_CT)
@@ -428,14 +453,17 @@ class CycleGAN():
         # Identity mapping of images
           img_CT_id = self.GenCT2CB(img_CT)
           img_CB_id = self.GenCB2CT(img_CB)
+          
+        #   self.DiscCT_static = Network(inputs=img_CT, outputs=guess_A, name='D_A_static_model')
+        #   self.DiscCB_static = Network(inputs=img_CB, outputs=guess_B, name='D_B_static_model')
         
-        # For the combined model we will only train the generators
-          self.DiscCT.trainable = False
-          self.DiscCB.trainable = False
+        # # For the combined model we will only train the generators
+        #   self.DiscCT_static.trainable = False
+        #   self.DiscCB_static.trainable = False
         
         # Discriminators determines validity of translated images
-          valid_CT = self.DiscCT(fake_CT)
-          valid_CB = self.DiscCB(fake_CB)
+          valid_CT = self.DiscCT_static(fake_CT)
+          valid_CB = self.DiscCB_static(fake_CB)
         
         # Combined model trains generators to fool discriminators
           self.cycleGAN_Model = keras.Model(inputs=[img_CT, img_CB], outputs=[valid_CT, valid_CB, reconstr_CT, reconstr_CB, img_CT_id, img_CB_id])
@@ -557,7 +585,8 @@ class CycleGAN():
         print('Epoch')
         return D_losses,G_losses
         
-#%%
+#%%True
+          # self.DiscCB.trainable = 
 
 mypath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/'
 outputpath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/output'
