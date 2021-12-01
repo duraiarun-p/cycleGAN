@@ -60,14 +60,11 @@ def create_image_array_gen(image_list, image_path, nr_of_channels,newshape):
     return np.array(image_array)
 
 class data_sequence(Sequence):
-    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, newshape,batch_size,batch_set_size):
+    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, newshape,batch_size):
         self.newshape=newshape
         self.batch_size = batch_size
-        self.batch_set_size = batch_set_size
         self.train_A = []
         self.train_B = []
-        image_list_A=random.sample(image_list_A,self.batch_set_size)
-        image_list_B=random.sample(image_list_B,self.batch_set_size)
         for image_name in image_list_A:
             if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
                 self.train_A.append(os.path.join(trainA_path, image_name))
@@ -75,9 +72,9 @@ class data_sequence(Sequence):
             if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
                 self.train_B.append(os.path.join(trainB_path, image_name))
     def __len__(self):
-        no=1
-        # return int(min(len(self.train_A), len(self.train_B)) / float(self.batch_size))
-        return int(no)
+        # no=1
+        return int(min(len(self.train_A), len(self.train_B)) / float(self.batch_size))
+        # return int(no)
     def __getitem__(self, idx):
         if idx >= min(len(self.train_A), len(self.train_B)):
             # If all images soon are used for one domain,
@@ -104,7 +101,9 @@ class data_sequence(Sequence):
 def loadprintoutgen(trainCT_path,trainCB_path,batch_size,newshape,batch_set_size):
     trainCT_image_names = os.listdir(trainCT_path)
     trainCB_image_names = os.listdir(trainCB_path)
-    return data_sequence(trainCT_path, trainCB_path, trainCT_image_names, trainCB_image_names, newshape,batch_size=batch_size,batch_set_size=batch_set_size)
+    trainCT_image_names=random.sample(trainCT_image_names,batch_set_size)
+    trainCB_image_names=random.sample(trainCB_image_names,batch_set_size)
+    return data_sequence(trainCT_path, trainCB_path, trainCT_image_names, trainCB_image_names, newshape,batch_size=batch_size)
 
 class CycleGAN():
     
@@ -177,7 +176,7 @@ class CycleGAN():
         
         return keras.Model(d0,u1)
     
-    def __init__(self,mypath,weightoutputpath,epochs,batch_size,imgshape,newshape,batch_set_size,saveweightflag):
+    def __init__(self,mypath,weightoutputpath,epochs,save_epoch_frequency,batch_size,imgshape,newshape,batch_set_size,saveweightflag):
           self.DataPath=mypath
           self.WeightSavePath=weightoutputpath
           self.batch_size=batch_size
@@ -187,6 +186,7 @@ class CycleGAN():
           self.genafilter = 32
           self.discfilter = 64
           self.epochs = epochs+1
+          self.save_epoch_frequency=save_epoch_frequency
           self.batch_set_size=batch_set_size
           self.lambda_cycle = 10.0                    # Cycle-consistency loss
           self.lambda_id = 0.9 * self.lambda_cycle    # Identity loss
@@ -214,8 +214,11 @@ class CycleGAN():
           os.mkdir(self.WeightSavePathNew)
           os.chdir(self.WeightSavePathNew)
           
-          self.Disc_lr=0.0002
-          self.Gen_lr=0.0002
+          self.Disc_lr=0.001
+          self.Gen_lr=0.01
+          
+          # self.Disc_lr=0.03
+          # self.Gen_lr=0.03
          
           self.Disc_optimizer = keras.optimizers.Adam(self.Disc_lr, 0.5,0.999)
           self.Gen_optimizer = keras.optimizers.Adam(self.Gen_lr, 0.5,0.999)
@@ -292,9 +295,9 @@ class CycleGAN():
               
           self.trainCT_path = os.path.join(self.DataPath, 'trainCT')
           self.trainCB_path = os.path.join(self.DataPath, 'trainCB')
-          testCT_path = os.path.join(self.DataPath, 'validCT')
-          testCB_path = os.path.join(self.DataPath, 'validCB')
-          # self.data_generator=loadprintoutgen(trainCT_path,trainCB_path,self.batch_size,self.newshape,self.batch_set_size)
+          self.testCT_path = os.path.join(self.DataPath, 'validCT')
+          self.testCB_path = os.path.join(self.DataPath, 'validCB')
+          # self.data_generator=loadprintoutgen(self.trainCT_path,self.trainCB_path,self.batch_size,self.newshape,self.batch_set_size)
           
           # for images in self.data_generator:
           #     batch_CT = images[0]
@@ -325,9 +328,11 @@ class CycleGAN():
         # G_losses = np.zeros((self.batch_set_size,7,self.epochs))
         D_losses = []
         G_losses = []
+        # D_losses_T = []
+        # G_losses_T = []
         
         #Learning rate schedule
-        learning_rates=self.learningrate_log_scheduler()
+        # learning_rates=self.learningrate_log_scheduler()
         
         def run_training_iteration(loop_index, epoch_iterations):
               valid = tf.ones((self.labelshape))
@@ -363,26 +368,65 @@ class CycleGAN():
                                                         batch_CT, batch_CB])
               
               return g_loss, d_loss.numpy()
+          
+        def run_test_iteration(loop_index, epoch_iterations):
+              valid = tf.ones((self.labelshape))
+              fake = tf.zeros((self.labelshape))
+                 # ----------------------
+                 #  Train Discriminators
+                 # ----------------------
+
+                 # Translate images to opposite domain
+              fake_CB = self.GenCT2CB.predict(batch_CT)
+              fake_CT = self.GenCB2CT.predict(batch_CB)
+
+                 # Train the discriminators (original images = real / translated = Fake)
+              dCT_loss_real = self.DiscCT.test_on_batch(batch_CT, valid)
+              dCT_loss_fake = self.DiscCT.test_on_batch(fake_CT, fake)
+              dCT_loss = 0.5 * tf.math.add(dCT_loss_real, dCT_loss_fake)
+
+              dCB_loss_real = self.DiscCB.test_on_batch(batch_CB, valid)
+              dCB_loss_fake = self.DiscCB.test_on_batch(fake_CB, fake)
+              dCB_loss = 0.5 * tf.math.add(dCB_loss_real, dCB_loss_fake)
+
+                 # Total discriminator loss
+              d_loss = 0.5 * tf.math.add(dCT_loss, dCB_loss)
+
+                 # ------------------
+                 #  Train Generators
+                 # ------------------
+
+                 # Train the generators
+              g_loss = self.cycleGAN_Model.test_on_batch([batch_CT, batch_CB],
+                                                       [valid, valid,
+                                                        batch_CT, batch_CB,
+                                                        batch_CT, batch_CB])
+              
+              return g_loss, d_loss.numpy()
               
         for epochi in range(self.epochs):
             # if self.use_data_generator:
                 loop_index = 1
-                K.set_value(self.Gen_optimizer.learning_rate, learning_rates[epochi])
-                K.set_value(self.Disc_optimizer.learning_rate, learning_rates[epochi])
+                # K.set_value(self.Gen_optimizer.learning_rate, learning_rates[epochi])
+                # K.set_value(self.Disc_optimizer.learning_rate, learning_rates[epochi])
                 self.data_generator=loadprintoutgen(self.trainCT_path,self.trainCB_path,self.batch_size,self.newshape,self.batch_set_size)
                 print(self.data_generator.__len__())
+                # self.data_generator_test=loadprintoutgen(self.testCT_path,self.testCB_path,self.batch_size,self.newshape,self.batch_set_size)
+                # print(self.data_generator_test.__len__())
+                # os.system("nvidia-smi")
                 for images in self.data_generator:
                     batch_CT = images[0]
                     batch_CB = images[1]
                     # Run all training steps
                     g_loss, d_loss=run_training_iteration(loop_index, self.data_generator.__len__())
+                    # g_loss_t, d_loss_t=run_test_iteration(loop_index, self.data_generator.__len__())
                     
                     if loop_index >= self.data_generator.__len__():
                         break
                     loop_index += 1
-                    os.system("nvidia-smi")
                     
-                if epochi % 1 == 0 and self.saveweightflag==True: # Weights saved based on epoch intervals
+                    
+                if epochi % self.save_epoch_frequency == 0 and self.saveweightflag==True: # Weights saved based on epoch intervals
                     gen1fname1=gen1fname+'-'+str(epochi)+'.h5'    
                     gen2fname1=gen2fname+'-'+str(epochi)+'.h5'
                     disc1fname1=disc1fname+'-'+str(epochi)+'.h5'
@@ -394,10 +438,13 @@ class CycleGAN():
         
                 D_losses.append(d_loss)
                 G_losses.append(g_loss)
+                # D_losses_T.append(d_loss_t)
+                # G_losses_T.append(g_loss_t)
                 
-        os.system("nvidia-smi")
-        print('Epoch')
+        # os.system("nvidia-smi")
+                print('Epoch=%s'%epochi)
         
+        # return D_losses,G_losses,D_losses_T,G_losses_T
         return D_losses,G_losses
         
         
@@ -432,7 +479,7 @@ weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/0
 
 # batch_size=1
 # epochs=1
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=100,batch_size=2,imgshape=(256,256,1),newshape=(256,256),batch_set_size=100,saveweightflag=False)
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=10,save_epoch_frequency=2,batch_size=3,imgshape=(256,256,1),newshape=(256,256),batch_set_size=100,saveweightflag=False)
 # def run_tf(cGAN):
 #     D_losses,G_losses=cGAN.traincgan()
 #     Loss={D_losses,G_losses}
@@ -443,11 +490,12 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=100,batch_size=2,imgshape=(256,256,
 # p.join()
 # Losses=p.value
 
+# D_losses,G_losses,D_losses_T,G_losses_T=cGAN.traincgan()
 D_losses,G_losses=cGAN.traincgan()
-lr=cGAN.learningrate_log_scheduler()
+# lr=cGAN.learningrate_log_scheduler()
 #%%
 from scipy.io import savemat
-mdic = {"D_losses":D_losses,"G_losses":G_losses,"lr":lr}
+mdic = {"D_losses":D_losses,"G_losses":G_losses}
 savemat("Losses.mat",mdic)
 
 #%%
