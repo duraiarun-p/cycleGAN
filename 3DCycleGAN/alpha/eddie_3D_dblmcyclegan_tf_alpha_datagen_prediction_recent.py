@@ -7,15 +7,13 @@ Created on Wed Jun  2 11:38:26 2021
 """
 import time
 import datetime
-# import cv2
-# import itk
-# import h5py
 import numpy as np
-# from os import listdir
-# from os.path import isfile, join
-# import matplotlib.pyplot as plt
+import h5py
+from matplotlib import pyplot as plt
 import random
 import os
+from os import listdir
+from os.path import isfile, join
 import sys, getopt
 # import multiprocessing
 
@@ -117,6 +115,62 @@ def loadprintoutgen(trainCT_path,trainCB_path,batch_size,batch_set_size):
     trainCT_image_names=random.sample(trainCT_image_names,batch_set_size)
     trainCB_image_names=random.sample(trainCB_image_names,batch_set_size)
     return data_sequence(trainCT_path, trainCB_path, trainCT_image_names, trainCB_image_names,batch_size=batch_size)
+
+def dataload3D_2_predict(DataPath):
+        # self.batch_size=1
+        # mypath=self.DataPath
+        onlyfiles = [f for f in listdir(DataPath) if isfile(join(DataPath, f))]
+        onlyfiles.sort()
+        onlyfileslenrem=len(onlyfiles)-round(len(onlyfiles)*0.7)
+        onlyfiles = onlyfiles[0:-onlyfileslenrem]
+        matfiles=[join(DataPath,f) for f in onlyfiles]
+        mat_fname_ind=np.random.choice(len(matfiles),replace=False)  
+        mat_contents=h5py.File(matfiles[mat_fname_ind],'r')
+        # mat_contents_list=list(mat_contents.keys())    
+        PlanCTCellRef=mat_contents['CTInfoCell']
+        CTLen=np.shape(PlanCTCellRef)
+        CTsl=np.zeros([CTLen[1],1])
+        for cti in range(CTLen[1]):
+            CTmatsizref=mat_contents['CTInfoCell'][1,cti]
+            CTLocR=mat_contents[CTmatsizref]
+            CTLoc=CTLocR[()]
+            CTsiz=np.shape(CTLoc)
+            if CTsiz[1]>300:
+                CTsl[cti]=1
+            else:
+                CTsl[cti]=0
+        CTindex=np.where(CTsl==1)
+        CTindex=CTindex[0]   
+        CTindex=int(CTindex)
+        PlanCTLocRef=mat_contents['CTInfoCell'][1, CTindex]
+        PlanCTLocRef=mat_contents[PlanCTLocRef]
+        # PlanCTLoc=PlanCTLocRef[()]
+        PlanCTCellRef=mat_contents['CTInfoCell'][2, CTindex]
+        PlanCTCellRef=mat_contents[PlanCTCellRef]
+        CT=PlanCTCellRef[()]
+        CT=np.transpose(CT,(2,1,0))#data volume
+        # CT=(CT-np.min(CT))/np.ptp(CT)
+        CT = (CT-np.min(CT))/(np.max(CT)-np.min(CT))
+        CTsiz1=CT.shape  
+        CBCTCellRef=mat_contents['CBCTInfocell']
+        CBCLen=np.shape(CBCTCellRef)
+        CBCTi=np.random.choice(CBCLen[1],replace=False)  
+        CBCellRef=mat_contents['CBCTInfocell'][4, CBCTi]
+        CBCellRef=mat_contents[CBCellRef]
+        CBCT=CBCellRef[()]
+        CBCT=np.transpose(CBCT,(2,1,0))
+        # CBCT=(CBCT-np.min(CBCT))/np.ptp(CBCT)
+        CBCT=(CBCT-np.min(CBCT))/(np.max(CBCT)-np.min(CBCT))
+        CBsiz=CBCT.shape
+        # i=np.random.randint(CTsiz1[0]-self.patch_size*2)
+        # j=np.random.randint(CTsiz1[1]-self.patch_size*2)
+        # zi1=np.random.randint(CTsiz1[2]-self.depth_size)
+        # zi2=np.random.randint(CBsiz[2]-self.depth_size)
+        # CTblocks=CT[i:i+self.patch_size*2,j:j+self.patch_size*2,zi1:zi1+self.depth_size]
+        # CBblocks=CBCT[i:i+self.patch_size*2,j:j+self.patch_size*2,zi2:zi2+self.depth_size]
+        # CTblocks=np.expand_dims(CTblocks, axis=0)
+        # CBblocks=np.expand_dims(CBblocks, axis=0)
+        return CT, CBCT
 
 #%%
 
@@ -380,11 +434,9 @@ class CycleGAN():
           os.mkdir(self.WeightSavePathNew)
           os.chdir(self.WeightSavePathNew)
           
-          self.Disc_lr=3e-5
+          self.Disc_lr=4e-5
           self.Gen_lr=0.0005
           
-          # self.Disc_lr=0.001
-          # self.Gen_lr=0.01
          
           self.Disc_optimizer = keras.optimizers.Adam(self.Disc_lr, 0.5,0.999)
           self.Gen_optimizer = keras.optimizers.Adam(self.Gen_lr, 0.5,0.999)
@@ -590,11 +642,13 @@ class CycleGAN():
                 print('Epoch =%s'%epochi)
         return D_losses,G_losses
         
-#%%True
-          # self.DiscCB.trainable = 
+#%%
+
 # db4 3d volumes are normalised to 0-1 HU range
 mypath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/'
 weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/'
+# path of 3D volumes
+Datapath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/'
 # imgshape=(512,512)
 
 # inputfile = ''
@@ -616,28 +670,64 @@ weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3
 # print('Input path is :', mypath)
 # print('Output path is :', weightoutputpath)
 
-# batch_size=1
-# epochs=1
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=550,save_epoch_frequency=50,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=True)
-# def run_tf(cGAN):
-#     D_losses,G_losses=cGAN.traincgan()
-    
-# p=multiprocessing.Process(target=run_tf(cGAN))
-# p.start()
-# p.join()
-
-# D_losses,G_losses=cGAN.traincgan()
-# data=cGAN.data_generator()
-
-D_losses,G_losses=cGAN.traincgan()
-# lr=cGAN.learningrate_log_scheduler()
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=40,save_epoch_frequency=2,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
 #%%
-from scipy.io import savemat
-mdic = {"D_losses":D_losses,"G_losses":G_losses}
-savemat("Losses.mat",mdic)
+TestGenCT2CB=cGAN.build_generator3D()
+TestGenCT2CB.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/run2/weights/GenCT2CBWeights-550.h5")
+# batch_CB_P=TestGenCT2CB.predict(batch_CT)
 
+TestGenCB2CT=cGAN.build_generator3D()
+TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/run2/weights/GenCB2CTWeights-550.h5")
+# batch_CT_P=TestGenCB2CT.predict(batch_CB)
 
+CT,CBCT=dataload3D_2_predict(Datapath)
+CTsiz1=CT.shape 
+CBsiz=CBCT.shape
+CT_P=np.zeros_like(CT,dtype=float)
+#%%
 
+for i in  range(0,CTsiz1[0],cGAN.patch_size):
+    for j in range(0,CTsiz1[1],cGAN.patch_size):
+        for zi in range(0,CTsiz1[2],cGAN.depth_size):
+            currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+            # currentBlk=currentBlk[:,:,0:depth_size]
+            blksiz=currentBlk.shape
+            # print(blksiz)
+            if blksiz[2] != cGAN.depth_size:
+                diff_zi=blksiz[2]-cGAN.depth_size
+                zi=zi+diff_zi
+                currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+            currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+            currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+            currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+            currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+            currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+            currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+            CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+#%%
+plt.figure(1)
+plt.subplot(1,2,1)
+plt.imshow(CT[:,:,100],cmap='gray')
+plt.show()
+plt.show()
+plt.title('CT')
+plt.subplot(1,2,2)
+plt.imshow(CT_P[:,:,100],cmap='gray')
+plt.show()
+plt.show()
+plt.title('pseudo CB')
+#%%
+plt.figure(2)
+plt.subplot(1,2,1)
+plt.imshow(CT[:,:,1],cmap='gray')
+plt.show()
+plt.show()
+plt.title('CT')
+plt.subplot(1,2,2)
+plt.imshow(CT_P[:,:,1],cmap='gray')
+plt.show()
+plt.show()
+plt.title('pseudo CB')
 #%%  
 print('Script started at')
 print(st_0)
