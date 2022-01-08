@@ -7,13 +7,15 @@ Created on Wed Jun  2 11:38:26 2021
 """
 import time
 import datetime
-import numpy as np
+# import cv2
+# import itk
 import h5py
-from matplotlib import pyplot as plt
-import random
-import os
+import numpy as np
 from os import listdir
 from os.path import isfile, join
+import matplotlib.pyplot as plt
+import random
+import os
 import sys, getopt
 # import multiprocessing
 
@@ -25,6 +27,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
 # import tensorflow.python.keras.engine
+from tensorflow.keras.layers import ZeroPadding3D
 from tensorflow.keras.models import clone_model
 
 import scipy.io
@@ -41,6 +44,8 @@ os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
 st_0 = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S') 
 start_time_0=time.time()
+print('Script started at')
+print(st_0)
 #%% Data loader using data generator
 
 def create_image_array_gen_CT(trainCT_image_names, trainCT_path):
@@ -67,12 +72,14 @@ def create_image_array_gen_CB(trainCT_image_names, trainCT_path):
     return np.array(image_array)
 
 class data_sequence(Sequence):
-    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, batch_size):
+    def __init__(self, trainA_path, trainB_path, image_list_A, image_list_B, batch_size,batch_set_size):
         # self.newshape=newshape
         self.batch_size = batch_size
         self.train_A = []
         self.train_B = []
-        # self.batch_set_size=batch_set_size
+        self.batch_set_size=batch_set_size
+        image_list_A=random.sample(image_list_A,self.batch_set_size)
+        image_list_B=random.sample(image_list_B,self.batch_set_size)
         for image_name in image_list_A:
             # if image_name[-1].lower() == 'g':  # to avoid e.g. thumbs.db files
                 self.train_A.append(os.path.join(trainA_path, image_name))
@@ -114,7 +121,7 @@ def loadprintoutgen(trainCT_path,trainCB_path,batch_size,batch_set_size):
     trainCB_image_names = os.listdir(trainCB_path)
     trainCT_image_names=random.sample(trainCT_image_names,batch_set_size)
     trainCB_image_names=random.sample(trainCB_image_names,batch_set_size)
-    return data_sequence(trainCT_path, trainCB_path, trainCT_image_names, trainCB_image_names,batch_size=batch_size)
+    return data_sequence(trainCT_path, trainCB_path, trainCT_image_names, trainCB_image_names,batch_size=batch_size,batch_set_size=batch_set_size)
 
 def dataload3D_2_predict(DataPath):
         # self.batch_size=1
@@ -171,47 +178,78 @@ def dataload3D_2_predict(DataPath):
         # CTblocks=np.expand_dims(CTblocks, axis=0)
         # CBblocks=np.expand_dims(CBblocks, axis=0)
         return CT, CBCT
-
 #%%
+class ReflectionPadding3D(ZeroPadding3D):
+    """Reflection-padding layer for 3D data (spatial or spatio-temporal).
 
-class CycleGAN():
+    Args:
+        padding (int, tuple): The pad-width to add in each dimension.
+            If an int, the same symmetric padding is applied to height and
+            width.
+            If a tuple of 3 ints, interpreted as two different symmetric
+            padding values for height and width:
+            ``(symmetric_dim1_pad, symmetric_dim2_pad, symmetric_dim3_pad)``.
+            If tuple of 3 tuples of 2 ints, interpreted as
+            ``((left_dim1_pad, right_dim1_pad),
+            (left_dim2_pad, right_dim2_pad),
+            (left_dim3_pad, right_dim3_pad))``
+        data_format (str): A string, one of ``channels_last`` (default)
+            or ``channels_first``. The ordering of the dimensions in the
+            inputs. ``channels_last`` corresponds to inputs with shape
+            ``(batch, height, width, channels)`` while ``channels_first``
+            corresponds to inputs with shape
+            ``(batch, channels, height, width)``.
+    """
+
+    def call(self, inputs):
+        d_pad, w_pad, h_pad = self.padding
+        if self.data_format == 'channels_first':
+            pattern = [[0, 0], [0, 0], [d_pad[0], d_pad[1]],
+                       [w_pad[0], w_pad[1]], [h_pad[0], h_pad[1]]]
+        else:
+            pattern = [[0, 0], [d_pad[0], d_pad[1]],
+                       [w_pad[0], w_pad[1]], [h_pad[0], h_pad[1]], [0, 0]]
+        return tf.pad(inputs, pattern, mode='REFLECT')
     
-#%% 2D     
-    @staticmethod
-    def conv2d(layer_input, filters, f_size=4,stride=2,normalization=True):
-        """Discriminator layer"""
-        d = layers.Conv2D(filters, kernel_size=f_size,strides=stride, padding='same',activation='relu')(layer_input)
-        if normalization:
-            d = tfa.layers.InstanceNormalization(axis=3, 
-                                   center=True, 
-                                   scale=True,
-                                   beta_initializer="random_uniform",
-                                   gamma_initializer="random_uniform")(d)
-        d = layers.LeakyReLU(alpha=0.2)(d)
-        return d
-    @staticmethod
-    def deconv2d(layer_input, skip_input, filters, f_size=4, stride=1, dropout_rate=0,skip=True):
-          """Layers used during upsampling"""
-          u = layers.UpSampling2D(size=2)(layer_input)
-          u = layers.Conv2D(filters, kernel_size=f_size, strides=stride, padding='same', activation='tanh')(u)
-          if dropout_rate:
-              u = layers.Dropout(dropout_rate)(u)
-          u = tfa.layers.InstanceNormalization(axis=3, 
-                                   center=True, 
-                                   scale=True,
-                                   beta_initializer="random_uniform",
-                                   gamma_initializer="random_uniform")(u)
-          if skip:
-              u = layers.Concatenate()([u, skip_input])
-          return u
+class CycleGAN():
 #%% 3D
     @staticmethod
-    def convblk3d(ipL,filters,kernel_size,strides):
+    def convblk3d(ipL,filters,kernel_size,strides,normalization):
         opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
-        opL=layers.BatchNormalization()(opL)
-        opL=layers.LeakyReLU()(opL)
+        if normalization:
+            # opL=tfa.layers.InstanceNormalization(axis=3, 
+            #                        center=True, 
+            #                        scale=True,
+            #                        beta_initializer="random_uniform",
+            #                        gamma_initializer="random_uniform")(opL)
+            opL=layers.BatchNormalization()(opL)
+        opL=layers.LeakyReLU(alpha=0.2)(opL)
         return opL
     
+    @staticmethod
+    def convblk3d_ReLU(ipL,filters,kernel_size,strides,normalization):
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
+        if normalization:
+            # opL=tfa.layers.InstanceNormalization(axis=3, 
+                                   # center=True, 
+                                   # scale=True,
+                                   # beta_initializer="random_uniform",
+                                   # gamma_initializer="random_uniform")(opL)
+            opL=layers.BatchNormalization()(opL)
+        opL=layers.ReLU()(opL)
+        return opL
+    @staticmethod
+    def convblk3d_valid(ipL,filters,kernel_size,strides,normalization):
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='valid')(ipL)
+        if normalization:
+            # opL=tfa.layers.InstanceNormalization(axis=3, 
+            #                        center=True, 
+            #                        scale=True,
+            #                        beta_initializer="random_uniform",
+            #                        gamma_initializer="random_uniform")(opL)
+            opL=layers.BatchNormalization()(opL)
+        opL=layers.ReLU()(opL)
+        return opL
     @staticmethod
     def attentionblk3D(x,gating,filters,kernel_size,strides):
         gating_op=layers.Conv3D(filters, kernel_size=1)(gating)
@@ -250,155 +288,79 @@ class CycleGAN():
     
     @staticmethod
     def deconvblk3D(ipL,filters,kernel_size,strides):
-        opL=layers.UpSampling3D(size=2)(ipL)
-        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(opL)
+        # opL=layers.UpSampling3D(size=2)(ipL)
+        # opL=ReflectionPadding3D()(opL)
+        # opL=layers.Conv3DTranspose(filters, kernel_size, strides=strides,padding='SAME')(ipL)
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
+        # opL=tfa.layers.InstanceNormalization(axis=-1, 
+        #                            center=True, 
+        #                            scale=True,
+        #                            beta_initializer="random_uniform",
+        #                            gamma_initializer="random_uniform")(opL)
         opL=layers.BatchNormalization()(opL)
-        opL=layers.LeakyReLU()(opL)
+        opL=layers.Activation('relu')(opL)
         return opL
-    
     @staticmethod
-    def resblock(x,filters,kernelsize):
-        fx = layers.Conv3D(filters, kernelsize, activation='relu', padding='same')(x)
-        fx = layers.BatchNormalization()(fx)
-        fx = layers.Conv3D(filters, kernelsize, padding='same')(fx)
+    def upsample3D(ipL,filters,kernel_size,strides):
+        # opL=layers.UpSampling3D(size=2)(ipL)
+        # opL=ReflectionPadding3D()(opL)
+        opL=layers.Conv3DTranspose(filters, kernel_size, strides=strides,padding='SAME')(ipL)
+        # opL=layers.Conv3D(filters, kernel_size=1, strides=strides,padding='SAME')(ipL)
+        # opL=tfa.layers.InstanceNormalization(axis=-1, 
+        #                            center=True, 
+        #                            scale=True,
+        #                            beta_initializer="random_uniform",
+        #                            gamma_initializer="random_uniform")(opL)
+        opL=layers.BatchNormalization()(opL)
+        opL=layers.Activation('relu')(opL)
+        return opL
+    @staticmethod
+    def resblock(x,filters,kernelsize,stride):
+        fx = layers.Conv3D(filters, kernelsize,strides=stride,padding='same')(x)
+        # fx=tfa.layers.InstanceNormalization(axis=-1, 
+        #                            center=True, 
+        #                            scale=True,
+        #                            beta_initializer="random_uniform",
+        #                            gamma_initializer="random_uniform")(fx)
+        fx=layers.BatchNormalization()(fx)
+        fx = layers.Activation('relu')(fx)
+        fx = layers.Conv3D(filters, kernelsize,strides=stride, padding='same')(fx)
+        # fx=tfa.layers.InstanceNormalization(axis=3, 
+        #                            center=True, 
+        #                            scale=True,
+        #                            beta_initializer="random_uniform",
+        #                            gamma_initializer="random_uniform")(fx)
+        fx=layers.BatchNormalization()(fx)
         out = layers.Add()([x,fx])
-        out = layers.ReLU()(out)
-        out = layers.BatchNormalization()(out)
         return out
     
     def build_generator3D(self):
         ipL=keras.Input(shape=self.input_layer_shape_3D,name='Input')
-        opL1=self.convblk3d(ipL,self.genafilter,self.kernel_size,self.stride2)
-        opL2=self.convblk3d(opL1,self.genafilter*2,self.kernel_size,self.stride2)
-        opL3=self.convblk3d(opL2,self.genafilter*4,self.kernel_size,self.stride2)
-        opL4=layers.Conv3D(filters=self.genafilter*8, kernel_size=self.kernel_size, strides=self.stride2,padding='SAME')(opL3)
-        # opL4=self.convblk3d(opL3,self.genafilter*8,self.kernel_size,self.stride2)
+        opL = layers.Conv3D(self.genafilter, self.kernel_size_gen_1, padding='same')(ipL)
+        # opL=ReflectionPadding3D()(opL)
+        opL=self.deconvblk3D(opL,self.genafilter*2,self.kernel_size_gen_2,self.stride2)
+        opL=self.deconvblk3D(opL,self.genafilter*4,self.kernel_size_gen_2,self.stride2)
+        for _ in range(5):
+            opL=self.resblock(opL,self.genafilter*4,self.kernel_size_gen_2,self.stride1)
+        opL=self.upsample3D(opL,self.genafilter*2,self.kernel_size_gen_2,self.stride2)
+        opL=self.upsample3D(opL,self.genafilter,self.kernel_size_gen_2,self.stride2)
+        opL = layers.Conv3D(1, self.kernel_size_gen_1,self.stride1, padding='same')(opL)
+        # opL = layers.Conv3D(1, self.kernel_size_gen_1,self.stride1, padding='same')(opL)
         
-        opL5=self.attentionblk3D(opL3,opL4,filters=self.genafilter*8, kernel_size=self.kernel_size, strides=self.stride2)
-        
-        opL6=layers.Concatenate()([opL4,opL5])
-        opL7=self.deconvblk3D(opL6,self.genafilter*4,self.kernel_size,self.stride1)
-        opL8=self.deconvblk3D(opL7,self.genafilter*2,self.kernel_size,self.stride1)
-        # opL9=self.convblk3d(opL8,self.genafilter*4,self.kernel_size,self.stride2)
-        opL9=layers.Conv3D(filters=self.genafilter*4, kernel_size=self.kernel_size, strides=self.stride2,padding='SAME')(opL8)
-        
-        opL10=self.attentionblk3D_1(opL1,opL9,filters=self.genafilter*4, kernel_size=self.kernel_size, strides=self.stride2)
-        
-        opL11=layers.Concatenate()([opL9,opL10])
-        opL12=self.deconvblk3D(opL11,self.genafilter*2,self.kernel_size,self.stride1)
-        opL13=self.deconvblk3D(opL12,self.genafilter*4,self.kernel_size,self.stride1)
-        # opL14=self.convblk3d(opL13,self.genafilter*2,self.kernel_size,self.stride2)
-        opL14=layers.Conv3D(filters=self.genafilter*2, kernel_size=self.kernel_size, strides=self.stride2,padding='SAME')(opL13)
-        
-        opL15=self.attentionblk3D_2(ipL,opL14,filters=self.genafilter*2, kernel_size=self.kernel_size, strides=self.stride2)
-        
-        opL16=layers.Concatenate()([opL14,opL15])
-        opL17=self.deconvblk3D(opL16,self.genafilter*1,self.kernel_size,self.stride1)
-        opL18=self.deconvblk3D(opL17,self.genafilter*2,self.kernel_size,self.stride1)
-        # opL19=self.convblk3d(opL18,self.genafilter*1,self.kernel_size,self.stride1)
-        opL19=layers.Conv3D(filters=self.genafilter*1, kernel_size=self.kernel_size, strides=self.stride1,padding='SAME')(opL18)
-        
-        opL20=self.resblock(opL19, self.genafilter*1, self.kernel_size)
-        opL21=self.resblock(opL20, self.genafilter*1, self.kernel_size)
-        opL22=layers.Conv3D(filters=1, kernel_size=self.kernel_size, strides=self.stride1,padding='SAME')(opL21)
-        
-        return keras.Model(ipL,opL22)
-    
-    def build_discriminator3D(self):
-        ipL=keras.Input(shape=self.input_layer_shape_3D,name='Input')
-        opL1=self.convblk3d(ipL,self.discfilter,self.kernel_size_disc,self.stride2)
-        opL2=self.convblk3d(opL1,self.discfilter*2,self.kernel_size_disc,self.stride2)
-        opL3=self.convblk3d(opL2,self.discfilter*4,self.kernel_size_disc,self.stride2)
-        opL4=self.convblk3d(opL3,self.discfilter*8,self.kernel_size_disc,self.stride1)
-        
-        # opL5=layers.Flatten()(opL4)
-        
-        # opL5=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*self.discfilter*8)(opL5)
-        # opL5=layers.LeakyReLU()(opL5)
-        
-        # opL6=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*self.discfilter*16)(opL5)
-        # opL6=layers.LeakyReLU()(opL6)
-
-        # opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*self.discfilter*8)(opL6)
-        # opL8=layers.Activation('sigmoid')(opL7)
-
-        # opL9=layers.Dense(1)(opL8)
-        # opL=layers.Activation('sigmoid')(opL9)
-        
-        
-        opL5=layers.Conv3D(1, kernel_size=self.kernel_size_disc, strides=self.stride1,padding='SAME')(opL4)
-        
-        opL7 = layers.Flatten()(opL5)
-        
-        # opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*self.discfilter*8)(opL5)
-        # opL7=layers.LeakyReLU()(opL7)
-        
-        # opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*self.discfilter*16)(opL7)
-        # opL7=layers.LeakyReLU()(opL7)
-        
-        # opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter*8))(opL7)
-        # opL7=layers.LeakyReLU()(opL7)
-        
-        # opL7=layers.Conv3D(1, kernel_size=self.kernel_size_disc, strides=self.stride1,padding='SAME')(opL6)
-        
-        opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter))(opL7)
-        opL7=layers.LeakyReLU()(opL7)
-        
-        opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter*0.5))(opL7)
-        opL7=layers.LeakyReLU()(opL7)
-        
-        opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter*0.25))(opL7)
-        opL7=layers.LeakyReLU()(opL7)
-        
-        opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter*0.125))(opL7)
-        opL7=layers.LeakyReLU()(opL7)
-        
-        opL7=layers.Dense(self.kernel_size_disc*self.kernel_size_disc*self.kernel_size_disc*(self.discfilter*0.0625))(opL7)
-        opL7=layers.LeakyReLU()(opL7)
-        
-        opL7 = layers.Dense(1)(opL7)
-        opL = layers.Activation('relu')(opL7)
         
         return keras.Model(ipL,opL)
     
-    def build_discriminator(self):
-        d0 = keras.Input(shape=self.img_shape,name='Input')
-        d1 = self.conv2d(d0, self.discfilter, stride=2, normalization=False)
-        d2 = self.conv2d(d1, self.discfilter*2, stride=2, normalization=True)
-        d3 = self.conv2d(d2, self.discfilter*4, stride=2, normalization=True)
-        d4 = self.conv2d(d3, self.discfilter*8, stride=2, normalization=True)
-        d5 = self.conv2d(d4, self.discfilter*8, stride=1, normalization=True)
-        d6 = layers.Conv2D(1, kernel_size=4, strides=1, padding='same')(d5)
-        d7 = layers.Activation('relu')(d6)
-        
-        return keras.Model(d0,d7)
+    def build_discriminator3D(self):
+        ipL=keras.Input(shape=self.input_layer_shape_3D,name='Input')
+        opL1=self.convblk3d(ipL,self.discfilter,self.kernel_size_disc,self.stride2,normalization=False)     
+        opL2=self.convblk3d(opL1,self.discfilter*2,self.kernel_size_disc,self.stride2,normalization=True)
+        opL3=self.convblk3d(opL2,self.discfilter*4,self.kernel_size_disc,self.stride1,normalization=True)
+        opL4=self.convblk3d(opL3,self.discfilter*8,self.kernel_size_disc,self.stride1,normalization=True)
+        opL5 = layers.Conv3D(1, kernel_size=4, strides=1, padding='same',activation='sigmoid')(opL4)
+        # opL6 = layers.Flatten()(opL5)
+        # opL7 = layers.Dense(1, activation='Sigmoid')(opL6)
+        return keras.Model(ipL,opL5)
     
-    def build_generator(self):
-        d0 = keras.Input(shape=self.img_shape,name='Input')
-        d1 = self.conv2d(d0, self.genafilter,stride=1,normalization=True)
-        d2 = self.conv2d(d1, self.genafilter,stride=2,normalization=True)
-        d3 = self.conv2d(d2, self.genafilter*2,stride=1,normalization=True)
-        d4 = self.conv2d(d3, self.genafilter*2,stride=2,normalization=True)
-        d5 = self.conv2d(d4, self.genafilter*4,stride=1,normalization=True)
-        d6 = self.conv2d(d5, self.genafilter*4,stride=2,normalization=True)
-        d7 = self.conv2d(d6, self.genafilter*8,stride=1,normalization=True)
-        d8 = self.conv2d(d7, self.genafilter*8,stride=2,normalization=True)
-        d9 = self.conv2d(d8, self.genafilter*16,stride=1,normalization=True)
-        d10 = self.conv2d(d9, self.genafilter*16,stride=2,normalization=True)
-        
-        u10 = self.deconv2d(d10, d8, self.genafilter*8,stride=1)
-        u9 = self.conv2d(u10, self.genafilter*8,stride=1,normalization=True)
-        u8 = self.deconv2d(u9, d6, self.genafilter*4,stride=1)
-        u7 = self.conv2d(u8, self.genafilter*4,stride=1,normalization=True)
-        u6 = self.deconv2d(u7, d4, self.genafilter*2,stride=1)
-        u5 = self.conv2d(u6, self.genafilter*2,stride=1,normalization=True)
-        u4 = self.deconv2d(u5, d2, self.genafilter,stride=1)
-        u3 = self.conv2d(u4, self.genafilter,stride=1,normalization=True)
-        u2 = self.deconv2d(u3,d1, self.genafilter,stride=1,skip=False)
-        u1 = layers.Conv2D(1, kernel_size=1, strides=1, padding='same')(u2)
-        u1 = layers.Activation('tanh')(u1)
-        
-        return keras.Model(d0,u1)
     
     def __init__(self,mypath,weightoutputpath,epochs,save_epoch_frequency,batch_size,imgshape,batch_set_size,saveweightflag):
           self.DataPath=mypath
@@ -406,8 +368,8 @@ class CycleGAN():
           self.batch_size=batch_size
           self.img_shape=imgshape
           self.input_shape=tuple([batch_size,imgshape])
-          self.genafilter = 16
-          self.discfilter = 16
+          self.genafilter = 32
+          self.discfilter = 64
           self.epochs = epochs+1
           self.save_epoch_frequency=save_epoch_frequency
           self.batch_set_size=batch_set_size
@@ -421,6 +383,8 @@ class CycleGAN():
           self.stride1=1
           self.kernel_size = 3
           self.kernel_size_disc = 4
+          self.kernel_size_gen_1=7
+          self.kernel_size_gen_2=3
          
           os.chdir(self.WeightSavePath)
           self.folderlen='run'+str(len(next(os.walk(self.WeightSavePath))[1]))
@@ -434,9 +398,8 @@ class CycleGAN():
           os.mkdir(self.WeightSavePathNew)
           os.chdir(self.WeightSavePathNew)
           
-          self.Disc_lr=4e-5
-          self.Gen_lr=0.0005
-          
+          self.Disc_lr=4e-6
+          self.Gen_lr=0.001
          
           self.Disc_optimizer = keras.optimizers.Adam(self.Disc_lr, 0.5,0.999)
           self.Gen_optimizer = keras.optimizers.Adam(self.Gen_lr, 0.5,0.999)
@@ -446,6 +409,7 @@ class CycleGAN():
           self.DiscCT=self.build_discriminator3D()
           self.DiscCT.compile(loss='mse', optimizer=self.Disc_optimizer, metrics=['accuracy'])
           self.DiscCT._name='Discriminator-CT'
+          tf.keras.utils.plot_model(self.DiscCT, to_file='Discriminator-CT.png', show_shapes=True)
           # self.DiscCT.summary()
           with open('Disc.txt', 'w+') as f:
               self.DiscCT.summary(print_fn=lambda x: f.write(x + '\n'))
@@ -467,8 +431,7 @@ class CycleGAN():
           self.GenCB2CT=self.build_generator3D()
           self.GenCB2CT.compile(loss='mse', optimizer=self.Gen_optimizer, metrics=['accuracy'])
           self.GenCB2CT._name='Generator-CB2CT'
-         
-          
+          tf.keras.utils.plot_model(self.GenCB2CT, to_file='Generator-CB2CT.png', show_shapes=True)        
           # self.GenCB2CT.summary()
           with open('Gena.txt', 'w+') as f:
               self.GenCB2CT.summary(print_fn=lambda x: f.write(x + '\n'))
@@ -529,18 +492,18 @@ class CycleGAN():
           with open('cycleGAN.txt', 'w+') as f:
               self.cycleGAN_Model.summary(print_fn=lambda x: f.write(x + '\n'))
           
-          self.trainCT_path = os.path.join(self.DataPath, 'trainCT')
-          self.trainCB_path = os.path.join(self.DataPath, 'trainCB')
+          trainCT_path = os.path.join(self.DataPath, 'trainCT')
+          trainCB_path = os.path.join(self.DataPath, 'trainCB')
           # testCT_path = os.path.join(self.DataPath, 'validCT')
           # testCB_path = os.path.join(self.DataPath, 'validCB')
-          # self.data_generator=loadprintoutgen(trainCT_path,trainCB_path,self.batch_size,self.batch_set_size)
+          self.data_generator=loadprintoutgen(trainCT_path,trainCB_path,self.batch_size,self.batch_set_size)
           
           # for images in self.data_generator:
           #     batch_CT = images[0]
           #     batch_CB = images[1]
               
           #     print(batch_CT.shape)
-          # print(self.data_generator.__len__())
+          print(self.data_generator.__len__())
           os.system("nvidia-smi")
           print('Init')
           
@@ -609,9 +572,7 @@ class CycleGAN():
                 
                 # K.set_value(self.Gen_optimizer.learning_rate, learning_rates[epochi])
                 # K.set_value(self.Disc_optimizer.learning_rate, learning_rates[epochi])
-                self.data_generator=loadprintoutgen(self.trainCT_path,self.trainCB_path,self.batch_size,self.batch_set_size)
-                print(self.data_generator.__len__())
-                
+                # print(self.data_generator.__len__())
                 for images in self.data_generator:
                     batch_CT = images[0]
                     batch_CB = images[1]
@@ -644,10 +605,9 @@ class CycleGAN():
         
 #%%
 
-# db4 3d volumes are normalised to 0-1 HU range
 mypath='/home/arun/Documents/PyWSPrecision/datasets/printoutblks/db4/'
-weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/'
-# path of 3D volumes
+outputpath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/output'
+weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d_model_1/alpha/'
 Datapath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/'
 # imgshape=(512,512)
 
@@ -670,40 +630,85 @@ Datapath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/'
 # print('Input path is :', mypath)
 # print('Output path is :', weightoutputpath)
 
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=40,save_epoch_frequency=2,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
+# batch_size=1
+# epochs=1
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=550,save_epoch_frequency=50,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=False)
+# def run_tf(cGAN):
+#     D_losses,G_losses=cGAN.traincgan()
+    
+# p=multiprocessing.Process(target=run_tf(cGAN))
+# p.start()
+# p.join()
+
+# D_losses,G_losses=cGAN.traincgan()
+# data=cGAN.data_generator()
+
+# D_losses,G_losses=cGAN.traincgan()
+# lr=cGAN.learningrate_log_scheduler()
 #%%
+# from scipy.io import savemat
+# mdic = {"D_losses":D_losses,"G_losses":G_losses}
+# savemat("Losses.mat",mdic)
+#%%
+
 TestGenCT2CB=cGAN.build_generator3D()
-TestGenCT2CB.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/run2/weights/GenCT2CBWeights-550.h5")
+TestGenCT2CB.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d_model_1/alpha/run20/weights/GenCT2CBWeights-550.h5")
 # batch_CB_P=TestGenCT2CB.predict(batch_CT)
 
 TestGenCB2CT=cGAN.build_generator3D()
-TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d/run2/weights/GenCB2CTWeights-550.h5")
+TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3d_model_1/alpha/run20/weights/GenCB2CTWeights-550.h5")
 # batch_CT_P=TestGenCB2CT.predict(batch_CB)
 
 CT,CBCT=dataload3D_2_predict(Datapath)
 CTsiz1=CT.shape 
 CBsiz=CBCT.shape
 CT_P=np.zeros_like(CT,dtype=float)
+CT_blks=[]
+CT_blks_pred=[]
 #%%
-
+# def 3dsynth(TestGenCT2CB,CT,CTsiz1,cGAN):
 for i in  range(0,CTsiz1[0],cGAN.patch_size):
     for j in range(0,CTsiz1[1],cGAN.patch_size):
         for zi in range(0,CTsiz1[2],cGAN.depth_size):
+# for i in  range(0,CTsiz1[0],cGAN.patch_size//2):
+#     for j in range(0,CTsiz1[1],cGAN.patch_size//2):
+#         for zi in range(0,CTsiz1[2],cGAN.depth_size//2):
+# for i in  range(0,CTsiz1[0]):
+#     for j in range(0,CTsiz1[1]):
+#         for zi in range(0,CTsiz1[2]):            
             currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
             # currentBlk=currentBlk[:,:,0:depth_size]
             blksiz=currentBlk.shape
             # print(blksiz)
-            if blksiz[2] != cGAN.depth_size:
+            # if blksiz[0] != cGAN.patch_size:
+            #     diff_i=blksiz[0]-cGAN.depth_size
+            #     i=i+diff_i
+            
+            #     if blksiz[1] != cGAN.patch_size:
+            #         diff_j=blksiz[1]-cGAN.depth_size
+            #         j=j+diff_j
+                
+            if blksiz[2] != cGAN.depth_size or blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                
+                diff_i=blksiz[0]-cGAN.depth_size
+                i=i+diff_i
+                diff_j=blksiz[1]-cGAN.depth_size
+                j=j+diff_j
                 diff_zi=blksiz[2]-cGAN.depth_size
                 zi=zi+diff_zi
                 currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+            
+            CT_blks.append(currentBlk)
             currentBlk_i=np.expand_dims(currentBlk, axis=-1)
             currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
             currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
             currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+            # currentBlk_p = currentBlk_t
             currentBlk_p = np.squeeze(currentBlk_p,axis=0)
             currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+            CT_blks_pred.append(currentBlk_p)
             CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+    # return CT_P
 #%%
 plt.figure(1)
 plt.subplot(1,2,1)
@@ -728,6 +733,19 @@ plt.imshow(CT_P[:,:,1],cmap='gray')
 plt.show()
 plt.show()
 plt.title('pseudo CB')
+#%%  
+plt.figure(3)
+plt.subplot(1,2,1)
+plt.imshow(CT_blks[2500][:,:,15],cmap='gray')
+plt.show()
+plt.show()
+plt.title('CT')
+plt.subplot(1,2,2)
+plt.imshow(CT_blks_pred[2500][:,:,15],cmap='gray')
+plt.show()
+plt.show()
+plt.title('pseudo CB')
+
 #%%  
 print('Script started at')
 print(st_0)

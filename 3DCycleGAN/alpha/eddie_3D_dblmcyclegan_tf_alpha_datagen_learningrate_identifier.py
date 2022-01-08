@@ -198,7 +198,7 @@ class CycleGAN():
     @staticmethod
     def deconvblk3D(ipL,filters,kernel_size,strides):
         opL=layers.UpSampling3D(size=2)(ipL)
-        opL=layers.Conv3D(filters, kernel_size=1, strides=strides,padding='SAME')(opL)
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(opL)
         opL=layers.BatchNormalization()(opL)
         opL=layers.LeakyReLU()(opL)
         return opL

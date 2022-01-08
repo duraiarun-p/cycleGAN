@@ -487,11 +487,11 @@ for images in test_ds:
     batch_CB = images[1]
 #%%
 TestGenCT2CB=cGAN.build_generator()
-TestGenCT2CB.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/2d/run2/weights/GenCT2CBWeights-40.h5")
+TestGenCT2CB.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/2d/run2/weights/GenCT2CBWeights-0.h5")
 batch_CB_P=TestGenCT2CB.predict(batch_CT)
 
 TestGenCB2CT=cGAN.build_generator()
-TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/2d/run2/weights/GenCB2CTWeights-40.h5")
+TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/2d/run2/weights/GenCB2CTWeights-0.h5")
 batch_CT_P=TestGenCB2CT.predict(batch_CB)
 #%%
 batch_CB_P=np.squeeze(batch_CB_P,axis=-1)
