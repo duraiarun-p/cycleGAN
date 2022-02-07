@@ -15,6 +15,9 @@ from os import listdir
 from os.path import isfile, join
 from matplotlib import pyplot as plt
 import tensorflow as tf
+from PIL import Image
+import PIL
+from scipy import ndimage as nd
 
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
@@ -80,10 +83,13 @@ def dataload3D_2_predict(DataPath):
 #%%
 Datapath='/home/arun/Documents/MATLAB/ImageDB/PrintoutDB/DB33/'
 CT,CBCT=dataload3D_2_predict(Datapath)
+CT=CT[:,:,0:32]
+CBCT=CBCT[:,:,0:32]
 CTsiz1=CT.shape 
 CBsiz=CBCT.shape
 patch_size=32
 depth_size=32
+newshape=(patch_size,patch_size,depth_size)
 threshold=1*np.mean(CT)
 #%%
 # data=CT
@@ -113,26 +119,68 @@ threshold=1*np.mean(CT)
 # patches = patchify(CT, (patch_size,patch_size,depth_size), step=16) # patch shape [2,2,3]
 
 # CT_u = unpatchify(patches, CTsiz1)
+CTblkindex=[]
+CTblkindex1=[]
+CTblksize=[]
 CT_P=np.zeros_like(CT,dtype=float)
-for i in  range(0,CTsiz1[0],patch_size):
-    for j in range(0,CTsiz1[1],patch_size):
-        for zi in range(0,CTsiz1[2],depth_size):
+overlap=4
+for zi in range(0,CTsiz1[2],depth_size//overlap):
+    for j in  range(0,CTsiz1[0],patch_size//overlap):
+        for i in range(0,CTsiz1[1],patch_size//overlap):
+# for zi in range(0,CTsiz1[2]):
+#     for j in  range(0,CTsiz1[0]):
+#         for i in range(0,CTsiz1[1]):            
+
+            ele=[i,j,zi]
+            ele1=[i+patch_size,j+patch_size,zi+depth_size]
+            CTblkindex.append(ele)
+            CTblkindex1.append(ele1)
             currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
-            # currentBlk=currentBlk[:,:,0:depth_size]
+            # # currentBlk=currentBlk[:,:,0:depth_size]
             blksiz=currentBlk.shape
-            if blksiz[2] != depth_size:
-                diff_zi=blksiz[2]-depth_size
-                zi=zi+diff_zi
-                currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
-            currentBlk_i=np.expand_dims(currentBlk, axis=-1)
-            currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
-            currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
-            # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
-            # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
-            currentBlk_p = currentBlk_t.numpy()/2
-            currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
-            currentBlk_p = np.squeeze(currentBlk_p,axis=0)
-            CT_P[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]=currentBlk_p
+            CTblksize.append(blksiz)
+            # if blksiz[2] != depth_size:
+            #     diff_zi=blksiz[2]-depth_size
+            #     zi=zi+diff_zi
+            #     currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
+            # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+            # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+            # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+            if blksiz[2] != depth_size or blksiz[1] != patch_size or blksiz[0] != patch_size:
+                dsfactor=(blksiz[0]/patch_size,blksiz[1]/patch_size,blksiz[2]/depth_size)
+                currentBlk = nd.interpolation.zoom(currentBlk, zoom=dsfactor)
+                # currentBlk=Image.fromarray(currentBlk)
+                # currentBlk = currentBlk.resize(newshape,resample=PIL.Image.NEAREST)
+                # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+            # else:
+                
+                currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                
+                # currentBlk_p = currentBlk_t.numpy()/2
+                currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                currentBlk_p = currentBlk_p
+                dsfactor1=(patch_size/blksiz[0],patch_size/blksiz[1],depth_size/blksiz[2])
+                currentBlk_p = nd.interpolation.zoom(currentBlk_p, zoom=dsfactor1)
+                CT_P[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]=currentBlk_p
+            else:
+                currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                # currentBlk_p = currentBlk_t.numpy()/2
+                currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                currentBlk_p = currentBlk_p
+                CT_P[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]=currentBlk_p
+                
 
 #%%
 slice_index=np.random.choice(CTsiz1[2],replace=False)             
@@ -146,7 +194,7 @@ plt.subplot(1,2,2)
 plt.imshow(CT_P[:,:,slice_index],cmap='gray')
 plt.show()
 plt.show()
-plt.title('pseudo CB')
+plt.title('Block-wise Thresholded BW slice mask')
 
 #%%  
 print('Script started at')

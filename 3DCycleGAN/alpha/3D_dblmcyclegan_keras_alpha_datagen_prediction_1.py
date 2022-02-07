@@ -31,6 +31,7 @@ from tensorflow.keras.layers import ZeroPadding3D
 from tensorflow.keras.models import clone_model
 
 import scipy.io
+from scipy import ndimage as nd
 from tensorflow.keras.utils import Sequence
 
 
@@ -660,92 +661,629 @@ TestGenCB2CT.load_weights("/home/arun/Documents/PyWSPrecision/Pyoutputs/cyclegan
 # batch_CT_P=TestGenCB2CT.predict(batch_CB)
 
 CT,CBCT=dataload3D_2_predict(Datapath)
-CTsiz1=CT.shape 
-CBsiz=CBCT.shape
-CT_P=np.zeros_like(CT,dtype=float)
-CT_blks=[]
-CT_blks_pred=[]
+# CT=CT[:,:,0:32]
+# CBCT=CBCT[:,:,0:32]
+
+
 #%%
-# def 3dsynth(TestGenCT2CB,CT,CTsiz1,cGAN):
-for i in  range(0,CTsiz1[0],cGAN.patch_size):
-    for j in range(0,CTsiz1[1],cGAN.patch_size):
-        for zi in range(0,CTsiz1[2],cGAN.depth_size):
-# for i in  range(0,CTsiz1[0],cGAN.patch_size//2):
-#     for j in range(0,CTsiz1[1],cGAN.patch_size//2):
-#         for zi in range(0,CTsiz1[2],cGAN.depth_size//2):
-# for i in  range(0,CTsiz1[0]):
-#     for j in range(0,CTsiz1[1]):
-#         for zi in range(0,CTsiz1[2]):            
-            currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
-            # currentBlk=currentBlk[:,:,0:depth_size]
-            blksiz=currentBlk.shape
-            # print(blksiz)
-            # if blksiz[0] != cGAN.patch_size:
-            #     diff_i=blksiz[0]-cGAN.depth_size
-            #     i=i+diff_i
-            
-            #     if blksiz[1] != cGAN.patch_size:
-            #         diff_j=blksiz[1]-cGAN.depth_size
-            #         j=j+diff_j
+def synth3D_wo_pad_avg(cGAN,overlap,CT):
+    CTsiz1=CT.shape 
+    CT_P=np.zeros_like(CT,dtype=float)
+    
+    CT_blks=[]
+    CT_blks_pred=[]
+    
+    CTblkindex=[]
+    CTblkindex1=[]
+    for zi in range(0,CTsiz1[2],cGAN.depth_size//overlap):
+        for j in  range(0,CTsiz1[0],cGAN.patch_size//overlap):
+            for i in range(0,CTsiz1[1],cGAN.patch_size//overlap):
+                # i=i+1
+                # j=j+1
+                ele=[i,j,zi]               
+                CTblkindex.append(ele)
                 
-            if blksiz[2] != cGAN.depth_size or blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
-                
-                diff_i=blksiz[0]-cGAN.depth_size
-                i=i+diff_i
-                diff_j=blksiz[1]-cGAN.depth_size
-                j=j+diff_j
-                diff_zi=blksiz[2]-cGAN.depth_size
-                zi=zi+diff_zi
                 currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                blksiz=currentBlk.shape
+
+                if blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[1] != cGAN.patch_size:
+                        diff_zj=blksiz[1]-cGAN.patch_size
+                        j=j+diff_zj
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[0] != cGAN.patch_size:
+                        diff_i=blksiz[0]-cGAN.patch_size
+                        i=i+diff_i
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    for ai in range(0,2):
+                        currentBlk_p1 = TestGenCT2CB.predict(currentBlk_t)
+                        currentBlk_p = currentBlk_p1 + currentBlk_p                    
+                    currentBlk_p=currentBlk_p/3
+                    
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    
+                    dsfactor=(blksiz[0]/cGAN.patch_size,blksiz[1]/cGAN.patch_size,blksiz[2]/cGAN.depth_size)
+                    
+                    
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+                    # ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    
+                    ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                else:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    for ai in range(0,2):
+                        currentBlk_p1 = TestGenCT2CB.predict(currentBlk_t)
+                        currentBlk_p = currentBlk_p1 + currentBlk_p                    
+                    currentBlk_p=currentBlk_p/3
+                    # currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    
+                    ele1=[i+cGAN.patch_size,j+cGAN.patch_size-zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+    return CT_P,CT_blks,CT_blks_pred
+def synth3D_wo_pad(cGAN,overlap,CT):
+    CTsiz1=CT.shape 
+    CT_P=np.zeros_like(CT,dtype=float)
+    
+    CT_blks=[]
+    CT_blks_pred=[]
+    
+    CTblkindex=[]
+    CTblkindex1=[]
+    for zi in range(0,CTsiz1[2],cGAN.depth_size//overlap):
+        for j in  range(0,CTsiz1[0],cGAN.patch_size//overlap):
+            for i in range(0,CTsiz1[1],cGAN.patch_size//overlap):            
+                ele=[i,j,zi]               
+                CTblkindex.append(ele)
+                
+                currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                blksiz=currentBlk.shape
+
+                if blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[1] != cGAN.patch_size:
+                        diff_zj=blksiz[1]-cGAN.patch_size
+                        j=j+diff_zj
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[0] != cGAN.patch_size:
+                        diff_i=blksiz[0]-cGAN.patch_size
+                        i=i+diff_i
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    # dsfactor1=(cGAN.patch_size/blksiz[0],cGAN.patch_size/blksiz[1],cGAN.depth_size/blksiz[2])
+                    # currentBlk = nd.interpolation.zoom(currentBlk, zoom=dsfactor1)
+                    # currentBlk=Image.fromarray(currentBlk)
+                    # currentBlk = currentBlk.resize(newshape,resample=PIL.Image.NEAREST)
+                    # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # else:
+                    
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    
+                    dsfactor=(blksiz[0]/cGAN.patch_size,blksiz[1]/cGAN.patch_size,blksiz[2]/cGAN.depth_size)
+                    
+                    # currentBlk_p = nd.interpolation.zoom(currentBlk_p, zoom=dsfactor)
+                    
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+                    # ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    
+                    ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                else:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    
+                    ele1=[i+cGAN.patch_size,j+cGAN.patch_size-zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+    return CT_P,CT_blks,CT_blks_pred
+def synth3D(cGAN,overlap,CT,CT_P):
+    CTsiz1=CT.shape 
+    # CT_P=np.zeros_like(CT,dtype=float)
+    
+    CT_blks=[]
+    CT_blks_pred=[]
+    
+    CTblkindex=[]
+    CTblkindex1=[]
+    for zi in range(0,CTsiz1[2],cGAN.depth_size//overlap):
+        for j in  range(0,CTsiz1[0],cGAN.patch_size//overlap):
+            for i in range(0,CTsiz1[1],cGAN.patch_size//overlap):
+    # for zi in range(0,CTsiz1[2]):
+    #     for j in  range(0,CTsiz1[0]):
+    #         for i in range(0,CTsiz1[1]):            
+    
+                ele=[i,j,zi]
+                
+                CTblkindex.append(ele)
+                
+                currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                # # currentBlk=currentBlk[:,:,0:depth_size]
+                blksiz=currentBlk.shape
+                # CTblksize.append(blksiz)
+                # if blksiz[2] != depth_size:
+                #     diff_zi=blksiz[2]-depth_size
+                #     zi=zi+diff_zi
+                #     currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
+                # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                if blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[1] != cGAN.patch_size:
+                        diff_zj=blksiz[1]-cGAN.patch_size
+                        j=j+diff_zj
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[0] != cGAN.patch_size:
+                        diff_i=blksiz[0]-cGAN.patch_size
+                        i=i+diff_i
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    dsfactor1=(cGAN.patch_size/blksiz[0],cGAN.patch_size/blksiz[1],cGAN.depth_size/blksiz[2])
+                    # currentBlk = nd.interpolation.zoom(currentBlk, zoom=dsfactor1)
+                    # currentBlk=Image.fromarray(currentBlk)
+                    # currentBlk = currentBlk.resize(newshape,resample=PIL.Image.NEAREST)
+                    # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # else:
+                    
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    dsfactor=(blksiz[0]/cGAN.patch_size,blksiz[1]/cGAN.patch_size,blksiz[2]/cGAN.depth_size)
+                    
+                    # currentBlk_p = nd.interpolation.zoom(currentBlk_p, zoom=dsfactor)
+                    
+                    currentBlk_p = currentBlk_p[3:-3,3:-3,:]
+                    CT_P[i+3:i+cGAN.patch_size-3,j+3:j+cGAN.patch_size-3,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+                    # ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                else:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    currentBlk_p = currentBlk_p[3:-3,3:-3,:]
+                    CT_P[i+3:i+cGAN.patch_size-3,j+3:j+cGAN.patch_size-3,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    # CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size-1,zi+cGAN.depth_size-1]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+    return CT_P,CT_blks,CT_blks_pred
+def synth3D_trans_i(cGAN,overlap,CT,CT_P):
+    CTsiz1=CT.shape 
+    # CT_P=np.zeros_like(CT,dtype=float)
+    
+    CT_blks=[]
+    CT_blks_pred=[]
+    
+    CTblkindex=[]
+    CTblkindex1=[]
+    for zi in range(0,CTsiz1[2],cGAN.depth_size//overlap):
+        for j in  range(0,CTsiz1[0],cGAN.patch_size//overlap):
+            for i in range(0,CTsiz1[1],cGAN.patch_size//overlap):
+                i=i+14
+    # for zi in range(0,CTsiz1[2]):
+    #     for j in  range(0,CTsiz1[0]):
+    #         for i in range(0,CTsiz1[1]):            
+    
+                ele=[i,j,zi]
+                
+                CTblkindex.append(ele)
+                
+                currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                # # currentBlk=currentBlk[:,:,0:depth_size]
+                blksiz=currentBlk.shape
+                # CTblksize.append(blksiz)
+                # if blksiz[2] != depth_size:
+                #     diff_zi=blksiz[2]-depth_size
+                #     zi=zi+diff_zi
+                #     currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
+                # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                if blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[1] != cGAN.patch_size:
+                        diff_zj=blksiz[1]-cGAN.patch_size
+                        j=j+diff_zj
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[0] != cGAN.patch_size:
+                        diff_i=blksiz[0]-cGAN.patch_size
+                        i=i+diff_i
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    dsfactor1=(cGAN.patch_size/blksiz[0],cGAN.patch_size/blksiz[1],cGAN.depth_size/blksiz[2])
+                    # currentBlk = nd.interpolation.zoom(currentBlk, zoom=dsfactor1)
+                    # currentBlk=Image.fromarray(currentBlk)
+                    # currentBlk = currentBlk.resize(newshape,resample=PIL.Image.NEAREST)
+                    # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # else:
+                    
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    dsfactor=(blksiz[0]/cGAN.patch_size,blksiz[1]/cGAN.patch_size,blksiz[2]/cGAN.depth_size)
+                    
+                    # currentBlk_p = nd.interpolation.zoom(currentBlk_p, zoom=dsfactor)
+                    
+                    currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+                    # ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                else:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size-1,zi+cGAN.depth_size-1]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+    return CT_P,CT_blks,CT_blks_pred
+def synth3D_trans_j(cGAN,overlap,CT,CT_P):
+    CTsiz1=CT.shape 
+    # CT_P=np.zeros_like(CT,dtype=float)
+    
+    CT_blks=[]
+    CT_blks_pred=[]
+    
+    CTblkindex=[]
+    CTblkindex1=[]
+    for zi in range(0,CTsiz1[2],cGAN.depth_size//overlap):
+        for j in  range(0,CTsiz1[0],cGAN.patch_size//overlap):
+            for i in range(0,CTsiz1[1],cGAN.patch_size//overlap):
+                j=j+12
+    # for zi in range(0,CTsiz1[2]):
+    #     for j in  range(0,CTsiz1[0]):
+    #         for i in range(0,CTsiz1[1]):            
+    
+                ele=[i,j,zi]
+                
+                CTblkindex.append(ele)
+                
+                currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                # # currentBlk=currentBlk[:,:,0:depth_size]
+                blksiz=currentBlk.shape
+                # CTblksize.append(blksiz)
+                # if blksiz[2] != depth_size:
+                #     diff_zi=blksiz[2]-depth_size
+                #     zi=zi+diff_zi
+                #     currentBlk=CT[i:i+patch_size,j:j+patch_size,zi:zi+depth_size]
+                # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                if blksiz[1] != cGAN.patch_size or blksiz[0] != cGAN.patch_size:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[1] != cGAN.patch_size:
+                        diff_zj=blksiz[1]-cGAN.patch_size
+                        j=j+diff_zj
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    if blksiz[0] != cGAN.patch_size:
+                        diff_i=blksiz[0]-cGAN.patch_size
+                        i=i+diff_i
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    
+                    dsfactor1=(cGAN.patch_size/blksiz[0],cGAN.patch_size/blksiz[1],cGAN.depth_size/blksiz[2])
+                    # currentBlk = nd.interpolation.zoom(currentBlk, zoom=dsfactor1)
+                    # currentBlk=Image.fromarray(currentBlk)
+                    # currentBlk = currentBlk.resize(newshape,resample=PIL.Image.NEAREST)
+                    # currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    # currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    # currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                # else:
+                    
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    dsfactor=(blksiz[0]/cGAN.patch_size,blksiz[1]/cGAN.patch_size,blksiz[2]/cGAN.depth_size)
+                    
+                    # currentBlk_p = nd.interpolation.zoom(currentBlk_p, zoom=dsfactor)
+                    
+                    currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+                    # ele1=[i+cGAN.patch_size,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size,zi+cGAN.depth_size]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                else:
+                    if blksiz[2] != cGAN.depth_size:
+                        diff_zi=blksiz[2]-cGAN.depth_size
+                        zi=zi+diff_zi
+                        currentBlk=CT[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]
+                    currentBlk_i=np.expand_dims(currentBlk, axis=-1)
+                    currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
+                    currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
+                    # currentBlk_p=tf.where(currentBlk_t > threshold, 1, 0)
+                    # currentBlk_p=tf.where(currentBlk_t > tf.reduce_mean(currentBlk_t), 1, 0)
+                    # currentBlk_p = currentBlk_t.numpy()/2
+                    currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
+                    currentBlk_p = np.squeeze(currentBlk_p,axis=0)
+                    currentBlk_p = currentBlk_p[1:-1,1:-1,:]
+                    CT_P[i+1:i+cGAN.patch_size-1,j+1:j+cGAN.patch_size-1,zi:zi+cGAN.depth_size]=currentBlk_p
+                    
+                    # currentBlk_p = currentBlk_p[overlap:-overlap,overlap:-overlap,overlap:-overlap]
+                    # # CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
+                    # CT_P[i+overlap:i+cGAN.patch_size-overlap,j+overlap:j+cGAN.patch_size-overlap,zi+overlap:zi+cGAN.depth_size-overlap]=currentBlk_p
+                    
+                    ele1=[i+cGAN.patch_size-1,j+cGAN.patch_size-1,zi+cGAN.depth_size-1]
+                    # ele1=[i+cGAN.patch_size-overlap,j+cGAN.patch_size-overlap,zi+cGAN.depth_size-overlap]
+                    CTblkindex1.append(ele1)
+                    
+                    CT_blks.append(currentBlk)
+                    CT_blks_pred.append(currentBlk_p)
+    return CT_P,CT_blks,CT_blks_pred
+#%%
+overlap=1
+CT_P=np.zeros_like(CT,dtype=float)
+# CT_P,CT_blks,CT_blks_pred=synth3D_wo_pad_avg(cGAN,overlap,CT)
+# CT_P,CT_blks,CT_blks_pred=synth3D_wo_pad(cGAN,overlap,CT)
+CT_P,CT_blks,CT_blks_pred=synth3D(cGAN,overlap,CT,CT_P)
+CT_P,CT_blks,CT_blks_pred=synth3D(cGAN,8,CT,CT_P)
+# CT_P2,CT_blks,CT_blks_pred=synth3D_trans_i(cGAN,overlap,CT,CT_P)
+# CT_P,CT_blks,CT_blks_pred=synth3D_trans_j(cGAN,overlap,CT,CT_P)
+#%%
+# CTsiz1=CT.shape 
+# CTpixel=[]
+# CTpixel1=[]
+# for zi in range(CTsiz1[2]):
+#     for j in  range(cGAN.patch_size//overlap,CTsiz1[0]-cGAN.patch_size//overlap,cGAN.patch_size//overlap):
+#         for i in range(cGAN.patch_size//overlap,CTsiz1[1]-cGAN.patch_size//overlap,cGAN.patch_size//overlap):
+#             prior=CT_P[i-1,j-1,zi]
+#             posteri=CT_P[i+1,j+1,zi]
+#             CTpixel.append(CT_P[i,j,zi])
+#             CT_P[i,j,zi]=(prior+posteri)*0.5
+#             CTpixel1.append(CT_P[i,j,zi])
             
-            CT_blks.append(currentBlk)
-            currentBlk_i=np.expand_dims(currentBlk, axis=-1)
-            currentBlk_i=np.expand_dims(currentBlk_i, axis=0)
-            currentBlk_t=tf.convert_to_tensor(currentBlk_i, dtype=tf.float32)
-            currentBlk_p = TestGenCT2CB.predict(currentBlk_t)
-            # currentBlk_p = currentBlk_t
-            currentBlk_p = np.squeeze(currentBlk_p,axis=0)
-            currentBlk_p = np.squeeze(currentBlk_p,axis=-1)
-            CT_blks_pred.append(currentBlk_p)
-            CT_P[i:i+cGAN.patch_size,j:j+cGAN.patch_size,zi:zi+cGAN.depth_size]=currentBlk_p
-    # return CT_P
+            
+            
 #%%
 plt.figure(1)
 plt.subplot(1,2,1)
-plt.imshow(CT[:,:,100],cmap='gray')
+plt.imshow(CT[:,:,0],cmap='gray')
 plt.show()
 plt.show()
 plt.title('CT')
 plt.subplot(1,2,2)
-plt.imshow(CT_P[:,:,100],cmap='gray')
+plt.imshow(CT_P[:,:,0],cmap='gray')
 plt.show()
 plt.show()
 plt.title('pseudo CB')
 #%%
 plt.figure(2)
 plt.subplot(1,2,1)
-plt.imshow(CT[:,:,1],cmap='gray')
+plt.imshow(CT[:,:,0],cmap='gray')
 plt.show()
 plt.show()
 plt.title('CT')
 plt.subplot(1,2,2)
-plt.imshow(CT_P[:,:,1],cmap='gray')
+plt.imshow(CT_P[:,:,0],cmap='gray')
+plt.show()
+plt.show()
+plt.title('pseudo CB')
+#%%
+plt.figure(3)
+plt.subplot(1,2,1)
+plt.imshow(CT[:,:,0],cmap='gray')
+plt.show()
+plt.show()
+plt.title('CT')
+plt.subplot(1,2,2)
+plt.imshow(CT_P[:,:,0],cmap='gray')
 plt.show()
 plt.show()
 plt.title('pseudo CB')
 #%%  
-plt.figure(3)
-plt.subplot(1,2,1)
-plt.imshow(CT_blks[2500][:,:,15],cmap='gray')
-plt.show()
-plt.show()
-plt.title('CT')
-plt.subplot(1,2,2)
-plt.imshow(CT_blks_pred[2500][:,:,15],cmap='gray')
-plt.show()
-plt.show()
-plt.title('pseudo CB')
-
+# plt.figure(4)
+# plt.subplot(1,2,1)
+# plt.imshow(CT_blks[100][:,:,15],cmap='gray')
+# plt.show()
+# plt.show()
+# plt.title('CT')
+# plt.subplot(1,2,2)
+# plt.imshow(CT_blks_pred[100][:,:,15],cmap='gray')
+# plt.show()
+# plt.show()
+# plt.title('pseudo CB')
+#%%
+CT_line1=CT_P[100,:,0]
+CT_line2=CT_P[:,100,0]
+plt.figure(5)
+plt.subplot(2,1,1)
+plt.plot(CT_line1)
+plt.subplot(2,1,2)
+plt.plot(CT_line2)
 #%%  
 print('Script started at')
 print(st_0)

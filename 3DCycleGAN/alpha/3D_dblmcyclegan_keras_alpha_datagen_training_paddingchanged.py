@@ -158,7 +158,7 @@ class CycleGAN():
 #%% 3D
     @staticmethod
     def convblk3d(ipL,filters,kernel_size,strides,normalization):
-        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='valid')(ipL)
         if normalization:
             # opL=tfa.layers.InstanceNormalization(axis=3, 
             #                        center=True, 
@@ -171,7 +171,7 @@ class CycleGAN():
     
     @staticmethod
     def convblk3d_ReLU(ipL,filters,kernel_size,strides,normalization):
-        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='valid')(ipL)
         if normalization:
             # opL=tfa.layers.InstanceNormalization(axis=3, 
                                    # center=True, 
@@ -234,7 +234,7 @@ class CycleGAN():
         # opL=layers.UpSampling3D(size=2)(ipL)
         # opL=ReflectionPadding3D()(opL)
         # opL=layers.Conv3DTranspose(filters, kernel_size, strides=strides,padding='SAME')(ipL)
-        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='SAME')(ipL)
+        opL=layers.Conv3D(filters, kernel_size=kernel_size, strides=strides,padding='valid')(ipL)
         # opL=tfa.layers.InstanceNormalization(axis=-1, 
         #                            center=True, 
         #                            scale=True,
@@ -247,7 +247,7 @@ class CycleGAN():
     def upsample3D(ipL,filters,kernel_size,strides):
         # opL=layers.UpSampling3D(size=2)(ipL)
         # opL=ReflectionPadding3D()(opL)
-        opL=layers.Conv3DTranspose(filters, kernel_size, strides=strides,padding='SAME')(ipL)
+        opL=layers.Conv3DTranspose(filters, kernel_size, strides=strides,padding='valid')(ipL)
         # opL=layers.Conv3D(filters, kernel_size=1, strides=strides,padding='SAME')(ipL)
         # opL=tfa.layers.InstanceNormalization(axis=-1, 
         #                            center=True, 
@@ -259,7 +259,7 @@ class CycleGAN():
         return opL
     @staticmethod
     def resblock(x,filters,kernelsize,stride):
-        fx = layers.Conv3D(filters, kernelsize,strides=stride,padding='same')(x)
+        fx = layers.Conv3D(filters, kernelsize,strides=stride,padding='valid')(x)
         # fx=tfa.layers.InstanceNormalization(axis=-1, 
         #                            center=True, 
         #                            scale=True,
@@ -267,7 +267,7 @@ class CycleGAN():
         #                            gamma_initializer="random_uniform")(fx)
         fx=layers.BatchNormalization()(fx)
         fx = layers.Activation('relu')(fx)
-        fx = layers.Conv3D(filters, kernelsize,strides=stride, padding='same')(fx)
+        fx = layers.Conv3D(filters, kernelsize,strides=stride, padding='valid')(fx)
         # fx=tfa.layers.InstanceNormalization(axis=3, 
         #                            center=True, 
         #                            scale=True,
@@ -279,7 +279,7 @@ class CycleGAN():
     
     def build_generator3D(self):
         ipL=keras.Input(shape=self.input_layer_shape_3D,name='Input')
-        opL = layers.Conv3D(self.genafilter, self.kernel_size_gen_1, padding='same')(ipL)
+        opL = layers.Conv3D(self.genafilter, self.kernel_size_gen_1, padding='valid')(ipL)
         # opL=ReflectionPadding3D()(opL)
         opL=self.deconvblk3D(opL,self.genafilter*2,self.kernel_size_gen_2,self.stride2)
         opL=self.deconvblk3D(opL,self.genafilter*4,self.kernel_size_gen_2,self.stride2)
@@ -287,7 +287,7 @@ class CycleGAN():
             opL=self.resblock(opL,self.genafilter*4,self.kernel_size_gen_2,self.stride1)
         opL=self.upsample3D(opL,self.genafilter*2,self.kernel_size_gen_2,self.stride2)
         opL=self.upsample3D(opL,self.genafilter,self.kernel_size_gen_2,self.stride2)
-        opL = layers.Conv3D(1, self.kernel_size_gen_1,self.stride1, padding='same')(opL)
+        opL = layers.Conv3D(1, self.kernel_size_gen_1,self.stride1, padding='valid')(opL)
         # opL = layers.Conv3D(1, self.kernel_size_gen_1,self.stride1, padding='same')(opL)
         
         
@@ -299,7 +299,7 @@ class CycleGAN():
         opL2=self.convblk3d(opL1,self.discfilter*2,self.kernel_size_disc,self.stride2,normalization=True)
         opL3=self.convblk3d(opL2,self.discfilter*4,self.kernel_size_disc,self.stride1,normalization=True)
         opL4=self.convblk3d(opL3,self.discfilter*8,self.kernel_size_disc,self.stride1,normalization=True)
-        opL5 = layers.Conv3D(1, kernel_size=4, strides=1, padding='same',activation='sigmoid')(opL4)
+        opL5 = layers.Conv3D(1, kernel_size=4, strides=1, padding='valid',activation='sigmoid')(opL4)
         # opL6 = layers.Flatten()(opL5)
         # opL7 = layers.Dense(1, activation='Sigmoid')(opL6)
         return keras.Model(ipL,opL5)
@@ -574,7 +574,7 @@ weightoutputpath='/home/arun/Documents/PyWSPrecision/Pyoutputs/cycleganweights/3
 
 # batch_size=1
 # epochs=1
-cGAN=CycleGAN(mypath,weightoutputpath,epochs=550,save_epoch_frequency=50,batch_size=5,imgshape=(256,256,1),batch_set_size=100,saveweightflag=True)
+cGAN=CycleGAN(mypath,weightoutputpath,epochs=1,save_epoch_frequency=50,batch_size=5,imgshape=(256,256,1),batch_set_size=1,saveweightflag=False)
 # def run_tf(cGAN):
 #     D_losses,G_losses=cGAN.traincgan()
     
@@ -588,9 +588,9 @@ cGAN=CycleGAN(mypath,weightoutputpath,epochs=550,save_epoch_frequency=50,batch_s
 D_losses,G_losses=cGAN.traincgan()
 # lr=cGAN.learningrate_log_scheduler()
 #%%
-from scipy.io import savemat
-mdic = {"D_losses":D_losses,"G_losses":G_losses}
-savemat("Losses.mat",mdic)
+# from scipy.io import savemat
+# mdic = {"D_losses":D_losses,"G_losses":G_losses}
+# savemat("Losses.mat",mdic)
 
 
 #%%
